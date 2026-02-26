@@ -10,7 +10,7 @@
  * Remove (or set to false) when connecting to a real backend.
  */
 import type { PlatformSettings } from "@/types";
-import { PLATFORM_DEFAULTS } from "./settings";
+import { PLATFORM_DEFAULTS } from "./platform-defaults";
 
 const STORAGE_KEY = "mock_platform_settings";
 

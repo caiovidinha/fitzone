@@ -1,11 +1,7 @@
+import "server-only";
 import type { PlatformSettings } from "@/types";
-
-export const PLATFORM_DEFAULTS: PlatformSettings = {
-  platform_name: "FitZone",
-  logo_url: null,
-  primary_color: "#f97316",
-  accent_color: "#ea580c",
-};
+import { PLATFORM_DEFAULTS } from "./platform-defaults";
+export { PLATFORM_DEFAULTS } from "./platform-defaults";
 
 /**
  * Server-side helper: fetches platform settings from the backend.

@@ -57,7 +57,7 @@ export function Navbar() {
           {menuOpen && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-              <div className="absolute right-0 top-12 z-50 min-w-[180px] rounded-xl border border-zinc-800 bg-zinc-900 p-1 shadow-2xl">
+              <div className="absolute right-0 top-12 z-50 min-w-45 rounded-xl border border-zinc-800 bg-zinc-900 p-1 shadow-2xl">
                 <div className="border-b border-zinc-800 px-3 py-2.5">
                   <p className="text-sm font-medium text-zinc-100">{session?.user.name}</p>
                   <p className="text-xs text-zinc-500">{session?.user.email}</p>

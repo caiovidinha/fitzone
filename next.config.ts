@@ -21,11 +21,28 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "**.supabase.co",
       },
+      {
+        // Local backend mock storage (development only)
+        protocol: "http",
+        hostname: "localhost",
+        port: "8000",
+      },
     ],
     // Modern formats for smaller payloads
     formats: ["image/avif", "image/webp"],
     // Reasonable max image size
     deviceSizes: [640, 750, 828, 1080, 1200, 1920],
+  },
+
+  // Redirect backend-generated invite URLs to the Portuguese route
+  async redirects() {
+    return [
+      {
+        source: "/first-access",
+        destination: "/primeiro-acesso",
+        permanent: false, // 307 — keeps query params (token=...)
+      },
+    ];
   },
 
   // Security + caching headers for all routes
@@ -46,11 +63,11 @@ const nextConfig: NextConfig = {
             // Allows HLS streams from Bunny CDN pull zones and wasm (HLS.js)
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-eval'", // 'unsafe-eval' needed by HLS.js worker
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval'", // 'unsafe-inline' required by Next.js App Router hydration; 'unsafe-eval' by HLS.js worker
               "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: blob: https://*.b-cdn.net https://*.supabase.co",
-              "media-src 'self' blob: https://*.b-cdn.net",
-              "connect-src 'self' https://*.b-cdn.net https://*.supabase.co",
+              "img-src 'self' data: blob: https://*.b-cdn.net https://*.supabase.co http://localhost:8000",
+              "media-src 'self' blob: https://*.b-cdn.net http://localhost:8000",
+              `connect-src 'self' http://localhost:8000 ${process.env.NEXT_PUBLIC_BACKEND_URL ?? ""} https://*.b-cdn.net https://*.supabase.co`,
               "worker-src 'self' blob:",
               "frame-ancestors 'none'",
             ].join("; "),

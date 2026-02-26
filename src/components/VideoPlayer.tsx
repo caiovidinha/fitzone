@@ -5,10 +5,16 @@ import Hls from "hls.js";
 import { cn } from "@/lib/utils";
 
 interface VideoPlayerProps {
-  src: string; // HLS .m3u8 URL (signed)
+  /** HLS .m3u8 URL (signed) or Bunny iframe embed URL */
+  src: string;
   poster?: string;
   title?: string;
   className?: string;
+}
+
+/** Returns true when Bunny returns an iframe embed URL instead of a raw HLS manifest */
+function isBunnyEmbed(url: string) {
+  return url.includes("iframe.mediadelivery.net/embed") || url.includes("iframe.mediadelivery.net/play");
 }
 
 export function VideoPlayer({ src, poster, title, className }: VideoPlayerProps) {
@@ -63,6 +69,7 @@ export function VideoPlayer({ src, poster, title, className }: VideoPlayerProps)
       });
 
       hls.on(Hls.Events.ERROR, (_, data) => {
+        console.error("[HLS error]", data.type, data.details, data.fatal, data);
         if (data.fatal) setError(true);
       });
 
@@ -122,6 +129,21 @@ export function VideoPlayer({ src, poster, title, className }: VideoPlayerProps)
     return `${m}:${String(sec).padStart(2, "0")}`;
   }
 
+  // Bunny embed URL → render native iframe player (no HLS.js needed)
+  if (src && isBunnyEmbed(src)) {
+    return (
+      <div className={cn("relative aspect-video w-full overflow-hidden rounded-xl bg-zinc-950", className)}>
+        <iframe
+          src={src}
+          className="h-full w-full"
+          allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
+          allowFullScreen
+          title={title}
+        />
+      </div>
+    );
+  }
+
   if (error) {
     return (
       <div className={cn("flex aspect-video w-full items-center justify-center rounded-xl bg-zinc-900 text-zinc-400", className)}>
@@ -168,7 +190,7 @@ export function VideoPlayer({ src, poster, title, className }: VideoPlayerProps)
       {/* Controls overlay */}
       <div
         className={cn(
-          "absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/80 via-transparent to-transparent transition-opacity duration-300",
+          "absolute inset-0 flex cursor-pointer flex-col justify-end bg-linear-to-t from-black/80 via-transparent to-transparent transition-opacity duration-300",
           showControls ? "opacity-100" : "opacity-0"
         )}
         onClick={togglePlay}

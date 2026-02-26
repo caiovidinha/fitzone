@@ -2,11 +2,88 @@
 
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import Image from "next/image";
 import { settingsApi } from "@/lib/api";
 import { isMockApi, resetMockSettings } from "@/lib/mock-settings";
-import { PLATFORM_DEFAULTS } from "@/lib/settings";
+import { PLATFORM_DEFAULTS } from "@/lib/platform-defaults";
 import type { PlatformSettings } from "@/types";
+
+// ---------------------------------------------------------------------------
+// ImageUploadField — file picker with preview + upload mutation
+// ---------------------------------------------------------------------------
+function ImageUploadField({
+  label,
+  hint,
+  currentUrl,
+  accept = "image/*",
+  onUpload,
+  onRemove,
+  uploading,
+}: {
+  label: string;
+  hint?: string;
+  currentUrl: string | null;
+  accept?: string;
+  onUpload: (file: File) => void;
+  onRemove: () => void;
+  uploading?: boolean;
+}) {
+  const [localPreview, setLocalPreview] = useState<string | null>(null);
+
+  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLocalPreview(URL.createObjectURL(file));
+    onUpload(file);
+    e.target.value = "";
+  }
+
+  const displayUrl = localPreview ?? currentUrl;
+
+  return (
+    <div>
+      <label className="mb-1.5 block text-sm font-medium text-zinc-300">
+        {label}
+        {hint && <span className="ml-2 text-xs font-normal text-zinc-500">{hint}</span>}
+      </label>
+      <div className="flex items-center gap-4">
+        {displayUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={displayUrl}
+            alt={label}
+            className="h-14 w-14 rounded-xl border border-zinc-700 bg-zinc-800 object-contain p-1"
+            onError={() => setLocalPreview(null)}
+          />
+        )}
+        <div className="flex flex-col gap-1.5">
+          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 transition hover:border-brand hover:text-brand">
+            {uploading ? (
+              <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+                <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="3" className="opacity-75" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+              </svg>
+            )}
+            {uploading ? "Enviando..." : displayUrl ? "Trocar" : "Escolher arquivo"}
+            <input type="file" accept={accept} className="hidden" onChange={handleFile} disabled={uploading} />
+          </label>
+          {displayUrl && (
+            <button
+              type="button"
+              onClick={() => { setLocalPreview(null); onRemove(); }}
+              className="text-xs text-zinc-500 transition hover:text-red-400"
+            >
+              Remover
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // ColorField — label + native color picker + hex text input
@@ -74,13 +151,11 @@ function ThemePreview({
       <header className="flex items-center justify-between border-b border-zinc-800 bg-zinc-950/90 px-4 py-3">
         <div className="flex items-center gap-2">
           {values.logo_url ? (
-            <Image
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
               src={values.logo_url}
               alt={values.platform_name}
-              width={24}
-              height={24}
               className="h-6 w-6 rounded object-cover"
-              onError={() => {}}
             />
           ) : (
             <div className="flex h-6 w-6 items-center justify-center rounded bg-brand">
@@ -153,6 +228,26 @@ export default function SettingsPage() {
     onError: () => showToast("error", "Erro ao salvar. Tente novamente."),
   });
 
+  const logoMutation = useMutation({
+    mutationFn: (file: File) => settingsApi.uploadLogo(file).then((r) => r.data),
+    onSuccess: (data) => {
+      qc.setQueryData(["settings"], data);
+      setForm((f) => ({ ...f, logo_url: data.logo_url }));
+      showToast("success", "Logo atualizado!");
+    },
+    onError: () => showToast("error", "Erro ao enviar o logo."),
+  });
+
+  const faviconMutation = useMutation({
+    mutationFn: (file: File) => settingsApi.uploadFavicon(file).then((r) => r.data),
+    onSuccess: (data) => {
+      qc.setQueryData(["settings"], data);
+      setForm((f) => ({ ...f, favicon_url: data.favicon_url }));
+      showToast("success", "Favicon atualizado!");
+    },
+    onError: () => showToast("error", "Erro ao enviar o favicon."),
+  });
+
   function showToast(type: "success" | "error", msg: string) {
     setToast({ type, msg });
     setTimeout(() => setToast(null), 3500);
@@ -223,41 +318,26 @@ export default function SettingsPage() {
                 />
               </div>
 
-              {/* Logo URL */}
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-zinc-300">
-                  URL do logotipo
-                  <span className="ml-2 text-xs font-normal text-zinc-500">
-                    (PNG/SVG transparente, min. 64×64px)
-                  </span>
-                </label>
-                <input
-                  value={form.logo_url ?? ""}
-                  onChange={(e) => set("logo_url", e.target.value || null)}
-                  placeholder="https://..."
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2.5 text-sm text-zinc-100 placeholder-zinc-500 outline-none ring-brand focus:border-transparent focus:ring-2"
-                />
-                {/* Logo preview */}
-                {form.logo_url && (
-                  <div className="mt-2.5 flex items-center gap-3">
-                    <Image
-                      src={form.logo_url}
-                      alt="Logo preview"
-                      width={48}
-                      height={48}
-                      className="h-12 w-12 rounded-lg object-contain bg-zinc-800 p-1"
-                      onError={() => set("logo_url", null)}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => set("logo_url", null)}
-                      className="text-xs text-zinc-500 hover:text-red-400 transition"
-                    >
-                      Remover
-                    </button>
-                  </div>
-                )}
-              </div>
+              {/* Logo */}
+              <ImageUploadField
+                label="Logotipo"
+                hint="PNG/SVG transparente, min. 64×64px"
+                currentUrl={form.logo_url}
+                onUpload={(file) => logoMutation.mutate(file)}
+                onRemove={() => set("logo_url", null)}
+                uploading={logoMutation.isPending}
+              />
+
+              {/* Favicon */}
+              <ImageUploadField
+                label="Favicon"
+                hint="ICO ou PNG quadrado, min. 32×32px"
+                currentUrl={form.favicon_url}
+                accept="image/x-icon,image/png,image/svg+xml"
+                onUpload={(file) => faviconMutation.mutate(file)}
+                onRemove={() => set("favicon_url", null)}
+                uploading={faviconMutation.isPending}
+              />
             </div>
           </section>
 

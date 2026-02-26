@@ -18,19 +18,23 @@ function StatCard({ label, value, icon, href }: { label: string; value: number |
   );
 }
 
+/** Extract the `total` field returned by all list endpoints. */
+function useTotal(queryKey: string[], queryFn: () => Promise<any>) {
+  const { data, isLoading } = useQuery({
+    queryKey,
+    queryFn,
+    select: (r) => {
+      const body = r?.data ?? r;
+      return typeof body?.total === "number" ? body.total : (body?.items?.length ?? 0);
+    },
+  });
+  return isLoading ? null : (data ?? 0);
+}
+
 export default function AdminDashboard() {
-  const { data: categories } = useQuery({
-    queryKey: ["categories"],
-    queryFn: () => categoriesApi.list().then((r) => r.data),
-  });
-  const { data: videos } = useQuery({
-    queryKey: ["videos"],
-    queryFn: () => videosApi.list().then((r) => r.data),
-  });
-  const { data: students } = useQuery({
-    queryKey: ["students"],
-    queryFn: () => studentsApi.list().then((r) => r.data),
-  });
+  const totalCategories = useTotal(["categories"], () => categoriesApi.list());
+  const totalVideos     = useTotal(["videos"],     () => videosApi.list());
+  const totalStudents   = useTotal(["students"],   () => studentsApi.list());
 
   return (
     <div className="p-8">
@@ -43,7 +47,7 @@ export default function AdminDashboard() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
           label="Categorias"
-          value={Array.isArray(categories) ? categories.length : "—"}
+          value={totalCategories ?? "—"}
           href="/admin/categories"
           icon={
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-5 w-5">
@@ -52,8 +56,8 @@ export default function AdminDashboard() {
           }
         />
         <StatCard
-          label="Vídeos publicados"
-          value={Array.isArray(videos) ? videos.filter((v: any) => v.published).length : "—"}
+          label="Vídeos"
+          value={totalVideos ?? "—"}
           href="/admin/videos"
           icon={
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-5 w-5">
@@ -62,8 +66,8 @@ export default function AdminDashboard() {
           }
         />
         <StatCard
-          label="Alunos ativos"
-          value={Array.isArray(students) ? students.filter((s: any) => s.active).length : "—"}
+          label="Alunos"
+          value={totalStudents ?? "—"}
           href="/admin/students"
           icon={
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-5 w-5">

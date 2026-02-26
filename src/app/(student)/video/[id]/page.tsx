@@ -1,8 +1,8 @@
-"use client";
+﻿"use client";
 
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
-import { videosApi } from "@/lib/api";
+import { videosApi, extractItems } from "@/lib/api";
 import { VideoPlayer } from "@/components/VideoPlayer";
 import { STREAM_URL_STALE_MS, STREAM_URL_GC_MS } from "@/app/providers";
 import { formatDuration, formatDate } from "@/lib/utils";
@@ -20,7 +20,12 @@ export default function VideoPage() {
 
   const { data: streamData, isLoading: streamLoading } = useQuery({
     queryKey: ["stream", id],
-    queryFn: () => videosApi.getStream(id).then((r) => r.data as { url: string }),
+    queryFn: () =>
+      videosApi.getStream(id).then((r) => {
+        const data = r.data as { url: string };
+        console.log("[stream URL]", data.url);
+        return data;
+      }),
     enabled: !!id,
     staleTime: STREAM_URL_STALE_MS,
     gcTime: STREAM_URL_GC_MS,
@@ -48,7 +53,7 @@ export default function VideoPage() {
           ) : streamData?.url ? (
             <VideoPlayer
               src={streamData.url}
-              poster={video?.thumbnail}
+              poster={video?.thumbnail_url ?? undefined}
               title={video?.title}
             />
           ) : (
@@ -69,15 +74,19 @@ export default function VideoPage() {
             <div className="mt-5">
               <h1 className="text-2xl font-bold tracking-tight text-zinc-100">{video.title}</h1>
               <div className="mt-1.5 flex flex-wrap items-center gap-3 text-sm text-zinc-500">
-                {video.categoryName && (
-                  <Link href={`/category/${video.categoryId}`} className="hover:text-brand transition">
-                    {video.categoryName}
+                {video.subcategory_id && (
+                  <Link href={`/subcategory/${video.subcategory_id}`} className="transition hover:text-brand">
+                    Ver grupo
                   </Link>
                 )}
+                {video.duration != null && (
+                  <>
+                    <span>•</span>
+                    <span>{formatDuration(video.duration)}</span>
+                  </>
+                )}
                 <span>•</span>
-                <span>{formatDuration(video.duration)}</span>
-                <span>•</span>
-                <span>{formatDate(video.createdAt)}</span>
+                <span>{formatDate(video.created_at)}</span>
               </div>
               {video.description && (
                 <p className="mt-4 whitespace-pre-line leading-relaxed text-zinc-300">{video.description}</p>
@@ -86,23 +95,30 @@ export default function VideoPage() {
           ) : null}
         </div>
 
-        {/* Sidebar: more videos from category */}
+        {/* Sidebar: more videos from same subcategory */}
         <div>
           <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-zinc-500">
-            Mais desta categoria
+            Mais deste grupo
           </h2>
-          <RelatedVideos currentVideoId={id} categoryId={video?.categoryId} />
+          <RelatedVideos currentVideoId={id} subcategoryId={video?.subcategory_id ?? undefined} />
         </div>
       </div>
     </div>
   );
 }
 
-function RelatedVideos({ currentVideoId, categoryId }: { currentVideoId: string; categoryId?: string }) {
+function RelatedVideos({
+  currentVideoId,
+  subcategoryId,
+}: {
+  currentVideoId: string;
+  subcategoryId?: string;
+}) {
   const { data, isLoading } = useQuery({
-    queryKey: ["videos", categoryId],
-    queryFn: () => videosApi.list(categoryId).then((r) => r.data as Video[]),
-    enabled: !!categoryId,
+    queryKey: ["videos", "subcategory", subcategoryId],
+    queryFn: () => videosApi.list(subcategoryId),
+    select: (r) => extractItems<Video>(r),
+    enabled: !!subcategoryId,
   });
 
   const videos = data?.filter((v) => v.id !== currentVideoId) ?? [];
@@ -112,7 +128,7 @@ function RelatedVideos({ currentVideoId, categoryId }: { currentVideoId: string;
       <div className="flex flex-col gap-3">
         {Array.from({ length: 4 }).map((_, i) => (
           <div key={i} className="flex gap-3">
-            <div className="h-16 w-28 flex-shrink-0 animate-pulse rounded-lg bg-zinc-800" />
+            <div className="h-16 w-28 shrink-0 animate-pulse rounded-lg bg-zinc-800" />
             <div className="flex flex-col gap-2 pt-1">
               <div className="h-3.5 w-28 animate-pulse rounded bg-zinc-800" />
               <div className="h-3 w-16 animate-pulse rounded bg-zinc-800" />
@@ -124,7 +140,7 @@ function RelatedVideos({ currentVideoId, categoryId }: { currentVideoId: string;
   }
 
   if (videos.length === 0) {
-    return <p className="text-sm text-zinc-500">Nenhum outro vídeo nesta categoria.</p>;
+    return <p className="text-sm text-zinc-500">Nenhum outro vídeo neste grupo.</p>;
   }
 
   return (
@@ -135,9 +151,9 @@ function RelatedVideos({ currentVideoId, categoryId }: { currentVideoId: string;
           href={`/video/${v.id}`}
           className="group flex gap-3 rounded-xl p-2 transition hover:bg-zinc-900"
         >
-          <div className="relative h-16 w-28 flex-shrink-0 overflow-hidden rounded-lg bg-zinc-800">
-            {v.thumbnail ? (
-              <img src={v.thumbnail} alt={v.title} className="h-full w-full object-cover" />
+          <div className="relative h-16 w-28 shrink-0 overflow-hidden rounded-lg bg-zinc-800">
+            {v.thumbnail_url ? (
+              <img src={v.thumbnail_url} alt={v.title} className="h-full w-full object-cover" />
             ) : (
               <div className="flex h-full w-full items-center justify-center">
                 <svg viewBox="0 0 24 24" fill="none" className="h-6 w-6 text-zinc-600" stroke="currentColor" strokeWidth={1.5}>
@@ -145,9 +161,11 @@ function RelatedVideos({ currentVideoId, categoryId }: { currentVideoId: string;
                 </svg>
               </div>
             )}
-            <div className="absolute bottom-1 right-1 rounded bg-black/70 px-1 text-xs text-white">
-              {formatDuration(v.duration)}
-            </div>
+            {v.duration != null && (
+              <div className="absolute bottom-1 right-1 rounded bg-black/70 px-1 text-xs text-white">
+                {formatDuration(v.duration)}
+              </div>
+            )}
           </div>
           <div className="flex flex-col gap-0.5">
             <p className="line-clamp-2 text-sm font-medium text-zinc-200 transition group-hover:text-brand">

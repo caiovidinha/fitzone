@@ -4,6 +4,7 @@
 export interface PlatformSettings {
   platform_name: string;
   logo_url: string | null;
+  favicon_url: string | null;
   primary_color: string; // hex, e.g. "#f97316"
   accent_color: string;  // hex, e.g. "#ea580c"
 }
@@ -19,39 +20,59 @@ export interface User {
   createdAt: string;
 }
 
+// ---------------------------------------------------------------------------
+// Categories — text-only (name, description, order).
+// Images and video grouping live in subcategories.
+// ---------------------------------------------------------------------------
 export interface Category {
   id: string;
   name: string;
-  description?: string;
-  coverImage?: string;
-  videoCount: number;
+  description?: string | null;
   order: number;
-  createdAt: string;
+  created_at: string;
 }
 
+// ---------------------------------------------------------------------------
+// Subcategories — belong to one or more categories; have cover image.
+// ---------------------------------------------------------------------------
+export interface Subcategory {
+  id: string;
+  name: string;
+  description?: string | null;
+  image_url?: string | null;
+  order: number;
+  created_at: string;
+  categories: Category[];
+}
+
+// ---------------------------------------------------------------------------
+// Videos
+// ---------------------------------------------------------------------------
 export interface Video {
   id: string;
   title: string;
-  description?: string;
-  thumbnail?: string;
-  duration: number; // seconds
-  categoryId: string;
-  categoryName?: string;
-  bunnyVideoId: string;
-  streamUrl?: string; // signed URL
-  published: boolean;
-  order: number;
-  createdAt: string;
+  description?: string | null;
+  subcategory_id?: string | null;
+  bunny_video_id: string;
+  thumbnail_url?: string | null;
+  duration?: number | null; // seconds
+  is_published: boolean;
+  created_at: string;
+  upload_url?: string; // only present in POST /videos response
 }
 
+// ---------------------------------------------------------------------------
+// Students
+// ---------------------------------------------------------------------------
 export interface Student {
   id: string;
-  name: string;
   email: string;
-  avatar?: string;
-  invitedAt: string;
-  lastSeen?: string;
-  active: boolean;
+  name: string;
+  role: "student";
+  is_active: boolean;
+  created_at: string;
+  /** Present only in invite/resend-invite responses */
+  invite_url?: string;
 }
 
 export interface InvitePayload {
@@ -66,24 +87,16 @@ export interface ApiError {
 
 // ---------------------------------------------------------------------------
 // Pagination — cursor-based (scales without OFFSET degradation)
-// The backend returns a `nextCursor` opaque string instead of page numbers.
-// When nextCursor is null, there are no more pages.
+// The backend returns a `next_cursor` opaque string instead of page numbers.
+// When next_cursor is null, there are no more pages.
 // ---------------------------------------------------------------------------
 export interface CursorPage<T> {
   items: T[];
-  nextCursor: string | null;
+  next_cursor: string | null;
   total?: number; // optional — only provided on first page for display
 }
 
 export interface PageParams {
   cursor?: string;
-  limit?: number; // defaults to server-side PAGE_SIZE
-}
-
-/** @deprecated use CursorPage instead for new endpoints */
-export interface PaginatedResponse<T> {
-  items: T[];
-  total: number;
-  page: number;
-  pageSize: number;
+  limit?: number;
 }

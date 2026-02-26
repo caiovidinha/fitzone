@@ -2,32 +2,105 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { studentsApi } from "@/lib/api";
+import { studentsApi, extractItems } from "@/lib/api";
 import type { Student } from "@/types";
 import { getInitials, formatDate } from "@/lib/utils";
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// LinkModal — mostra o link gerado e permite copiar
+// ---------------------------------------------------------------------------
+function LinkModal({ inviteUrl, onClose }: { inviteUrl: string; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const url = inviteUrl;
+
+  function copy() {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-lg rounded-2xl border border-zinc-800 bg-zinc-900 p-6 shadow-2xl">
+        <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/15">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5 text-emerald-400">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
+          </svg>
+        </div>
+        <h2 className="mb-1 text-lg font-semibold text-zinc-100">Link de convite gerado!</h2>
+        <p className="mb-5 text-sm text-zinc-400">
+          Compartilhe este link com o aluno. Ele poderá criar email e senha para acessar a plataforma.
+        </p>
+
+        <div className="flex items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-3">
+          <span className="min-w-0 flex-1 truncate text-sm text-zinc-300">{url}</span>
+          <button
+            onClick={copy}
+            className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+              copied
+                ? "bg-emerald-500/20 text-emerald-400"
+                : "bg-zinc-700 text-zinc-200 hover:bg-zinc-600"
+            }`}
+          >
+            {copied ? "Copiado!" : "Copiar"}
+          </button>
+        </div>
+
+        <p className="mt-3 text-xs text-zinc-500">
+          O link expira após o primeiro uso.
+        </p>
+
+        <div className="mt-5 flex justify-end">
+          <button
+            onClick={onClose}
+            className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-accent"
+          >
+            Fechar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// InviteModal — dois passos: formulário → link gerado
+// ---------------------------------------------------------------------------
 function InviteModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
 
   const mutation = useMutation({
     mutationFn: () => studentsApi.invite({ name, email }),
-    onSuccess: () => {
+    onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["students"] });
-      onClose();
+      setInviteUrl(res.data.invite_url);
     },
-    onError: () => setError("Erro ao enviar convite. Verifique o email e tente novamente."),
+    onError: () => setError("Erro ao gerar convite. Verifique o email e tente novamente."),
   });
 
+  // Step 2: link display
+  if (inviteUrl) {
+    return <LinkModal inviteUrl={inviteUrl} onClose={onClose} />;
+  }
+
+  // Step 1: form
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-6 shadow-2xl">
-        <h2 className="mb-5 text-lg font-semibold text-zinc-100">Convidar aluno</h2>
+        <h2 className="mb-1 text-lg font-semibold text-zinc-100">Convidar aluno</h2>
         <p className="mb-5 text-sm text-zinc-400">
-          O aluno receberá um email com link de acesso para criar sua senha.
+          Preencha os dados e um link de acesso será gerado para você compartilhar.
         </p>
 
         <form
@@ -69,7 +142,10 @@ function InviteModal({ onClose }: { onClose: () => void }) {
               disabled={mutation.isPending}
               className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-accent disabled:opacity-60"
             >
-              {mutation.isPending ? "Enviando..." : "Enviar convite"}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
+              </svg>
+              {mutation.isPending ? "Gerando..." : "Gerar link"}
             </button>
           </div>
         </form>
@@ -78,14 +154,17 @@ function InviteModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+
 export default function StudentsPage() {
   const qc = useQueryClient();
   const [showInvite, setShowInvite] = useState(false);
   const [search, setSearch] = useState("");
+  const [linkUrl, setLinkUrl] = useState<string | null>(null);
 
-  const { data: students, isLoading } = useQuery({
+  const { data: students = [], isLoading } = useQuery({
     queryKey: ["students"],
-    queryFn: () => studentsApi.list().then((r) => r.data as Student[]),
+    queryFn: () => studentsApi.list(),
+    select: (r) => extractItems<Student>(r),
   });
 
   const revokeMutation = useMutation({
@@ -93,8 +172,9 @@ export default function StudentsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["students"] }),
   });
 
-  const resendMutation = useMutation({
+  const genLinkMutation = useMutation({
     mutationFn: (id: string) => studentsApi.resendInvite(id),
+    onSuccess: (res) => setLinkUrl(res.data.invite_url),
   });
 
   const filtered = students?.filter(
@@ -143,7 +223,6 @@ export default function StudentsPage() {
             <tr>
               <th className="px-4 py-3 font-medium text-zinc-400">Aluno</th>
               <th className="hidden px-4 py-3 font-medium text-zinc-400 md:table-cell">Convidado em</th>
-              <th className="hidden px-4 py-3 font-medium text-zinc-400 lg:table-cell">Último acesso</th>
               <th className="px-4 py-3 font-medium text-zinc-400">Status</th>
               <th className="px-4 py-3 font-medium text-zinc-400">Ações</th>
             </tr>
@@ -168,7 +247,7 @@ export default function StudentsPage() {
                   <tr key={student.id} className="transition hover:bg-zinc-900/40">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-brand/20 text-xs font-semibold text-brand">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand/20 text-xs font-semibold text-brand">
                           {getInitials(student.name)}
                         </div>
                         <div>
@@ -178,32 +257,30 @@ export default function StudentsPage() {
                       </div>
                     </td>
                     <td className="hidden px-4 py-3 text-zinc-400 md:table-cell">
-                      {formatDate(student.invitedAt)}
-                    </td>
-                    <td className="hidden px-4 py-3 text-zinc-500 lg:table-cell">
-                      {student.lastSeen ? formatDate(student.lastSeen) : "Nunca acessou"}
+                      {formatDate(student.created_at)}
                     </td>
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
-                          student.active
+                          student.is_active
                             ? "bg-emerald-500/15 text-emerald-400"
                             : "bg-zinc-800 text-zinc-500"
                         }`}
                       >
-                        <span className={`h-1.5 w-1.5 rounded-full ${student.active ? "bg-emerald-400" : "bg-zinc-500"}`} />
-                        {student.active ? "Ativo" : "Inativo"}
+                        <span className={`h-1.5 w-1.5 rounded-full ${student.is_active ? "bg-emerald-400" : "bg-zinc-500"}`} />
+                        {student.is_active ? "Ativo" : "Inativo"}
                       </span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
                         <button
-                          onClick={() => resendMutation.mutate(student.id)}
-                          title="Reenviar convite"
-                          className="rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-300"
+                          onClick={() => genLinkMutation.mutate(student.id)}
+                          disabled={genLinkMutation.isPending}
+                          title="Gerar link de acesso"
+                          className="rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-800 hover:text-brand disabled:opacity-40"
                         >
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
                           </svg>
                         </button>
                         <button
@@ -234,6 +311,7 @@ export default function StudentsPage() {
       </div>
 
       {showInvite && <InviteModal onClose={() => setShowInvite(false)} />}
+      {linkUrl && <LinkModal inviteUrl={linkUrl} onClose={() => setLinkUrl(null)} />}
     </div>
   );
 }

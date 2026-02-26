@@ -1,9 +1,12 @@
 import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
 
-const PUBLIC_ROUTES = ["/login"];
+// Routes that redirect logged-in users away (auth pages)
+const AUTH_ROUTES = ["/login"];
+// Routes always accessible regardless of session (one-time-use links, etc.)
+const ALWAYS_PUBLIC = ["/primeiro-acesso", "/first-access"];
 const ADMIN_ROUTES = ["/admin"];
-const STUDENT_ROUTES = ["/browse", "/category", "/video"];
+const STUDENT_ROUTES = ["/browse", "/category", "/video", "/subcategory"];
 
 export default auth((req) => {
   // Em modo mock, desativa toda verificação de auth para permitir teste sem backend.
@@ -14,7 +17,8 @@ export default auth((req) => {
   const { nextUrl, auth: session } = req;
   const pathname = nextUrl.pathname;
 
-  const isPublic = PUBLIC_ROUTES.some((r) => pathname.startsWith(r));
+  const isAuthRoute = AUTH_ROUTES.some((r) => pathname.startsWith(r));
+  const isAlwaysPublic = ALWAYS_PUBLIC.some((r) => pathname.startsWith(r));
   const isAdmin = ADMIN_ROUTES.some((r) => pathname.startsWith(r));
   const isStudent = STUDENT_ROUTES.some((r) => pathname.startsWith(r));
 
@@ -25,8 +29,11 @@ export default auth((req) => {
     return NextResponse.redirect(new URL("/browse", req.url));
   }
 
-  // Rota pública: se já estiver logado, redireciona
-  if (isPublic) {
+  // Rotas sempre públicas (links de convite, primeiro acesso): nunca redireciona
+  if (isAlwaysPublic) return NextResponse.next();
+
+  // Rota de auth (/login): se já estiver logado, redireciona para a área correta
+  if (isAuthRoute) {
     if (session) {
       const dest = session.user.role === "admin" ? "/admin" : "/browse";
       return NextResponse.redirect(new URL(dest, req.url));

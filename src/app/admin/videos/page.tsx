@@ -2,41 +2,66 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { videosApi, categoriesApi } from "@/lib/api";
-import type { Video, Category } from "@/types";
+import { videosApi, subcategoriesApi, extractItems } from "@/lib/api";
+import type { Video, Subcategory } from "@/types";
 import { formatDuration, formatDate } from "@/lib/utils";
 
-function UploadModal({ onClose }: { onClose: () => void }) {
+function UploadModal({ onClose, subcategories }: { onClose: () => void; subcategories: import("@/types").Subcategory[] }) {
   const qc = useQueryClient();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [categoryId, setCategoryId] = useState("");
+  const [subcategoryId, setSubcategoryId] = useState("");
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [thumbFile, setThumbFile] = useState<File | null>(null);
   const [error, setError] = useState("");
-  const [uploadProgress, setUploadProgress] = useState(0);
+  const [progress, setProgress] = useState(0);   // 0-100, only during Bunny PUT
+  const [step, setStep] = useState<"idle" | "creating" | "uploading" | "thumbnail" | "done">("idle");
 
-  const { data: categories } = useQuery({
-    queryKey: ["categories"],
-    queryFn: () => categoriesApi.list().then((r) => r.data as Category[]),
-  });
+  const isPending = step !== "idle" && step !== "done";
 
-  const mutation = useMutation({
-    mutationFn: async () => {
-      const fd = new FormData();
-      fd.append("title", title);
-      fd.append("description", description);
-      fd.append("category_id", categoryId);
-      if (videoFile) fd.append("video", videoFile);
-      if (thumbFile) fd.append("thumbnail", thumbFile);
-      return videosApi.create(fd);
-    },
-    onSuccess: () => {
+  const stepLabel: Record<typeof step, string> = {
+    idle: "Fazer upload",
+    creating: "Criando registro...",
+    uploading: `Enviando para Bunny... ${progress}%`,
+    thumbnail: "Enviando thumbnail...",
+    done: "Concluído!",
+  };
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!title.trim()) { setError("Título obrigatório."); return; }
+    if (!videoFile) { setError("Selecione um arquivo de vídeo."); return; }
+    setError("");
+
+    try {
+      // Step 1 — create record + get Bunny upload URL
+      setStep("creating");
+      const { data } = await videosApi.create({
+        title,
+        description: description || undefined,
+        subcategory_id: subcategoryId || undefined,
+      });
+
+      // Step 2 — upload video directly to Bunny
+      setStep("uploading");
+      setProgress(0);
+      await videosApi.uploadToBunny(data.upload_url, videoFile, setProgress);
+
+      // Step 3 (optional) — upload thumbnail via backend
+      if (thumbFile) {
+        setStep("thumbnail");
+        await videosApi.updateThumbnail(data.id, thumbFile);
+      }
+
+      setStep("done");
       qc.invalidateQueries({ queryKey: ["videos"] });
       onClose();
-    },
-    onError: () => setError("Erro ao fazer upload. Tente novamente."),
-  });
+    } catch {
+      setError("Erro durante o upload. Tente novamente.");
+      setStep("idle");
+      setProgress(0);
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -45,12 +70,7 @@ function UploadModal({ onClose }: { onClose: () => void }) {
         <h2 className="mb-5 text-lg font-semibold text-zinc-100">Upload de vídeo</h2>
 
         <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!title.trim()) { setError("Título obrigatório."); return; }
-            if (!videoFile) { setError("Selecione um arquivo de vídeo."); return; }
-            mutation.mutate();
-          }}
+          onSubmit={handleSubmit}
           className="flex flex-col gap-4"
         >
           {/* Video file */}
@@ -85,15 +105,15 @@ function UploadModal({ onClose }: { onClose: () => void }) {
           </div>
 
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-zinc-300">Categoria</label>
+            <label className="mb-1.5 block text-sm font-medium text-zinc-300">Subcategoria</label>
             <select
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
+              value={subcategoryId}
+              onChange={(e) => setSubcategoryId(e.target.value)}
               className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2.5 text-sm text-zinc-100 outline-none ring-brand focus:border-transparent focus:ring-2"
             >
-              <option value="">Sem categoria</option>
-              {categories?.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+              <option value="">Sem subcategoria</option>
+              {subcategories?.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>
           </div>
@@ -122,22 +142,41 @@ function UploadModal({ onClose }: { onClose: () => void }) {
 
           {error && <p className="text-sm text-red-400">{error}</p>}
 
-          {mutation.isPending && (
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
-              <div className="h-full w-1/2 animate-[slide] rounded-full bg-brand" />
+          {step === "uploading" && (
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-xs text-zinc-400">
+                <span>Enviando para Bunny CDN...</span>
+                <span>{progress}%</span>
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
+                <div
+                  className="h-full rounded-full bg-brand transition-all duration-150"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {(step === "creating" || step === "thumbnail") && (
+            <div className="flex items-center gap-2 text-sm text-zinc-400">
+              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+                <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="3" className="opacity-75" />
+              </svg>
+              {stepLabel[step]}
             </div>
           )}
 
           <div className="flex justify-end gap-3 pt-1">
-            <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-zinc-400 transition hover:text-zinc-100">
+            <button type="button" onClick={onClose} disabled={isPending} className="rounded-lg px-4 py-2 text-sm text-zinc-400 transition hover:text-zinc-100 disabled:opacity-40">
               Cancelar
             </button>
             <button
               type="submit"
-              disabled={mutation.isPending}
-              className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-accent disabled:opacity-60"
+              disabled={isPending}
+              className="flex min-w-32.5 items-center justify-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-accent disabled:opacity-60"
             >
-              {mutation.isPending ? "Enviando..." : "Fazer upload"}
+              {stepLabel[step]}
             </button>
           </div>
         </form>
@@ -149,21 +188,23 @@ function UploadModal({ onClose }: { onClose: () => void }) {
 export default function VideosPage() {
   const qc = useQueryClient();
   const [showUpload, setShowUpload] = useState(false);
-  const [filterCategory, setFilterCategory] = useState("");
+  const [filterSubcategory, setFilterSubcategory] = useState("");
 
-  const { data: categories } = useQuery({
-    queryKey: ["categories"],
-    queryFn: () => categoriesApi.list().then((r) => r.data as Category[]),
+  const { data: subcategories = [] } = useQuery({
+    queryKey: ["subcategories"],
+    queryFn: () => subcategoriesApi.list({ limit: 100 }),
+    select: (r) => extractItems<Subcategory>(r),
   });
 
-  const { data: videos, isLoading } = useQuery({
-    queryKey: ["videos", filterCategory],
-    queryFn: () => videosApi.list(filterCategory || undefined).then((r) => r.data as Video[]),
+  const { data: videos = [], isLoading } = useQuery({
+    queryKey: ["videos", filterSubcategory],
+    queryFn: () => videosApi.list(filterSubcategory || undefined),
+    select: (r) => extractItems<Video>(r),
   });
 
   const togglePublish = useMutation({
-    mutationFn: ({ id, published }: { id: string; published: boolean }) =>
-      videosApi.update(id, { published }),
+    mutationFn: ({ id, is_published }: { id: string; is_published: boolean }) =>
+      videosApi.update(id, { is_published }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["videos"] }),
   });
 
@@ -193,13 +234,13 @@ export default function VideosPage() {
       {/* Filter */}
       <div className="mb-6">
         <select
-          value={filterCategory}
-          onChange={(e) => setFilterCategory(e.target.value)}
+          value={filterSubcategory}
+          onChange={(e) => setFilterSubcategory(e.target.value)}
           className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-300 outline-none"
         >
-          <option value="">Todas as categorias</option>
-          {categories?.map((c) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
+          <option value="">Todas as subcategorias</option>
+          {subcategories?.map((s) => (
+            <option key={s.id} value={s.id}>{s.name}</option>
           ))}
         </select>
       </div>
@@ -210,7 +251,7 @@ export default function VideosPage() {
           <thead className="border-b border-zinc-800 bg-zinc-900/80">
             <tr>
               <th className="px-4 py-3 font-medium text-zinc-400">Vídeo</th>
-              <th className="hidden px-4 py-3 font-medium text-zinc-400 sm:table-cell">Categoria</th>
+              <th className="hidden px-4 py-3 font-medium text-zinc-400 sm:table-cell">Subcategoria</th>
               <th className="hidden px-4 py-3 font-medium text-zinc-400 md:table-cell">Duração</th>
               <th className="hidden px-4 py-3 font-medium text-zinc-400 lg:table-cell">Data</th>
               <th className="px-4 py-3 font-medium text-zinc-400">Status</th>
@@ -237,9 +278,9 @@ export default function VideosPage() {
                   <tr key={video.id} className="transition hover:bg-zinc-900/40">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="relative h-10 w-16 flex-shrink-0 overflow-hidden rounded bg-zinc-800">
-                          {video.thumbnail ? (
-                            <img src={video.thumbnail} alt="" className="h-full w-full object-cover" />
+                        <div className="relative h-10 w-16 shrink-0 overflow-hidden rounded bg-zinc-800">
+                          {video.thumbnail_url ? (
+                            <img src={video.thumbnail_url} alt="" className="h-full w-full object-cover" />
                           ) : (
                             <div className="flex h-full items-center justify-center text-zinc-600">
                               <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth={1.5}>
@@ -252,25 +293,25 @@ export default function VideosPage() {
                       </div>
                     </td>
                     <td className="hidden px-4 py-3 text-zinc-400 sm:table-cell">
-                      {video.categoryName ?? "—"}
+                      {subcategories.find((s) => s.id === video.subcategory_id)?.name ?? "—"}
                     </td>
                     <td className="hidden px-4 py-3 text-zinc-400 md:table-cell">
-                      {formatDuration(video.duration)}
+                      {video.duration != null ? formatDuration(video.duration) : "—"}
                     </td>
                     <td className="hidden px-4 py-3 text-zinc-500 lg:table-cell">
-                      {formatDate(video.createdAt)}
+                      {formatDate(video.created_at)}
                     </td>
                     <td className="px-4 py-3">
                       <button
-                        onClick={() => togglePublish.mutate({ id: video.id, published: !video.published })}
+                        onClick={() => togglePublish.mutate({ id: video.id, is_published: !video.is_published })}
                         className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition ${
-                          video.published
+                          video.is_published
                             ? "bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25"
                             : "bg-zinc-800 text-zinc-500 hover:bg-zinc-700"
                         }`}
                       >
-                        <span className={`h-1.5 w-1.5 rounded-full ${video.published ? "bg-emerald-400" : "bg-zinc-500"}`} />
-                        {video.published ? "Publicado" : "Rascunho"}
+                        <span className={`h-1.5 w-1.5 rounded-full ${video.is_published ? "bg-emerald-400" : "bg-zinc-500"}`} />
+                        {video.is_published ? "Publicado" : "Rascunho"}
                       </button>
                     </td>
                     <td className="px-4 py-3">
@@ -297,7 +338,7 @@ export default function VideosPage() {
         )}
       </div>
 
-      {showUpload && <UploadModal onClose={() => setShowUpload(false)} />}
+      {showUpload && <UploadModal onClose={() => setShowUpload(false)} subcategories={subcategories} />}
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { createContext, useContext, type ReactNode } from "react";
 import type { PlatformSettings } from "@/types";
-import { PLATFORM_DEFAULTS } from "@/lib/settings";
+import { PLATFORM_DEFAULTS } from "@/lib/platform-defaults";
 
 const PlatformContext = createContext<PlatformSettings>(PLATFORM_DEFAULTS);
 
