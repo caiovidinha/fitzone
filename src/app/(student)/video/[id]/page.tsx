@@ -29,6 +29,10 @@ export default function VideoPage() {
     enabled: !!id,
     staleTime: STREAM_URL_STALE_MS,
     gcTime: STREAM_URL_GC_MS,
+    // Proactively refresh the signed URL every 4 min so the token never
+    // expires while the user is watching. VideoPlayer saves currentTime
+    // before reinitialising so playback continues seamlessly.
+    refetchInterval: STREAM_URL_STALE_MS,
   });
 
   return (

@@ -46,7 +46,7 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="mb-10 flex flex-col items-center gap-2">
           {logo_url ? (
-            <Image src={logo_url} alt={platform_name} width={56} height={56} className="h-14 w-14 rounded-2xl object-cover" />
+            <Image src={logo_url} alt={platform_name} width={56} height={56} unoptimized className="h-14 w-14 rounded-2xl object-cover" onError={(e) => console.error('[Login] Logo failed to load:', logo_url, e)} />
           ) : (
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand">
               <svg viewBox="0 0 24 24" fill="none" className="h-8 w-8 text-white" stroke="currentColor" strokeWidth={2}>

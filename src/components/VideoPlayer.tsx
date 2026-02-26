@@ -20,6 +20,7 @@ function isBunnyEmbed(url: string) {
 export function VideoPlayer({ src, poster, title, className }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const savedTimeRef = useRef<number>(0); // persists currentTime across src refreshes
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -43,17 +44,64 @@ export function VideoPlayer({ src, poster, title, className }: VideoPlayerProps)
     const video = videoRef.current;
     if (!video || !src) return;
 
+    // Save current position before reinitialising (e.g. token refresh gives new URL)
+    if (videoRef.current && videoRef.current.currentTime > 1) {
+      savedTimeRef.current = videoRef.current.currentTime;
+    }
+
     setError(false);
     setReady(false);
 
     if (Hls.isSupported()) {
+      // ---------------------------------------------------------------------------
+      // Bunny Token Auth — forward token params to ALL sub-requests.
+      //
+      // Bunny signs a token_path (e.g. "/{videoId}/") so the same token covers the
+      // master playlist, quality playlists (video.m3u8) and every .ts segment.
+      // hls.js resolves those URLs internally without query params, so we inject
+      // them via a custom loader that wraps the default one.
+      // ---------------------------------------------------------------------------
+      const srcUrl = new URL(src);
+      const bunnyToken = srcUrl.searchParams.get("token");
+      const bunnyExpires = srcUrl.searchParams.get("expires");
+      const bunnyTokenPath = srcUrl.searchParams.get("token_path");
+
+      const DefaultLoader = Hls.DefaultConfig.loader as any;
+      class BunnyTokenLoader extends DefaultLoader {
+        load(context: any, config: any, callbacks: any) {
+          if (bunnyToken) {
+            try {
+              const u = new URL(context.url);
+              u.searchParams.set("token", bunnyToken);
+              if (bunnyExpires) u.searchParams.set("expires", bunnyExpires);
+              if (bunnyTokenPath) u.searchParams.set("token_path", bunnyTokenPath);
+              context.url = u.toString();
+            } catch {
+              // If URL parsing fails, proceed without modification
+            }
+          }
+          super.load(context, config, callbacks);
+        }
+      }
+
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
-        // ABR (Adaptive Bitrate) config for low bandwidth
-        abrEwmaDefaultEstimate: 500000,
-        startLevel: -1, // auto
+        // Start at a reasonable quality estimate (2 Mbps) instead of the lowest
+        abrEwmaDefaultEstimate: 2_000_000,
+        startLevel: -1, // auto-select based on bandwidth
         capLevelToPlayerSize: true,
+        // Buffer tuning — comfortable ahead-of-time buffer for exercise videos
+        maxBufferLength: 60,        // seconds to buffer ahead
+        maxMaxBufferLength: 120,
+        maxBufferSize: 60 * 1000 * 1000, // 60 MB
+        // Retry config — recover from transient network blips automatically
+        fragLoadingMaxRetry: 4,
+        fragLoadingRetryDelay: 500,
+        manifestLoadingMaxRetry: 3,
+        manifestLoadingRetryDelay: 1000,
+        // Inject Bunny token params into playlist and segment requests
+        loader: BunnyTokenLoader as any,
       });
 
       hlsRef.current = hls;
@@ -66,11 +114,28 @@ export function VideoPlayer({ src, poster, title, className }: VideoPlayerProps)
           l.height ? `${l.height}p` : `${Math.round((l.bitrate ?? 0) / 1000)}kbps`
         );
         setAvailableQualities(["Auto", ...levels]);
+        // Restore playback position after a token-refresh src swap
+        if (savedTimeRef.current > 1) {
+          video.currentTime = savedTimeRef.current;
+          savedTimeRef.current = 0;
+        }
       });
 
       hls.on(Hls.Events.ERROR, (_, data) => {
         console.error("[HLS error]", data.type, data.details, data.fatal, data);
-        if (data.fatal) setError(true);
+        if (!data.fatal) return; // hls.js handles non-fatal errors internally
+
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          // Network blip — attempt to recover before showing error UI
+          console.warn("[HLS] network error, trying to recover...");
+          hls.startLoad();
+        } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          console.warn("[HLS] media error, trying recoverMediaError...");
+          hls.recoverMediaError();
+        } else {
+          // Unrecoverable (e.g. 403 expired token)
+          setError(true);
+        }
       });
 
       return () => {

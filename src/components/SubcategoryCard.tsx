@@ -1,3 +1,5 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
 import type { Subcategory } from "@/types";
@@ -19,8 +21,10 @@ export function SubcategoryCard({ subcategory }: SubcategoryCardProps) {
             src={subcategory.image_url}
             alt={subcategory.name}
             fill
+            unoptimized
             className="object-cover transition duration-500 group-hover:scale-105 group-hover:opacity-80"
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+            onError={(e) => console.error('[SubcategoryCard] Image failed to load:', subcategory.image_url, e)}
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center bg-linear-to-br from-zinc-800 to-zinc-900">

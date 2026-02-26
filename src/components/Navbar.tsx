@@ -20,7 +20,7 @@ export function Navbar() {
         {/* Logo */}
         <Link href="/browse" className="flex items-center gap-2.5 font-bold text-zinc-100">
           {logo_url ? (
-            <Image src={logo_url} alt={platform_name} width={32} height={32} className="h-8 w-8 rounded-lg object-cover" />
+            <Image src={logo_url} alt={platform_name} width={32} height={32} unoptimized className="h-8 w-8 rounded-lg object-cover" onError={(e) => console.error('[Navbar] Logo failed to load:', logo_url, e)} />
           ) : (
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand">
               <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5 text-white" stroke="currentColor" strokeWidth={2.5}>

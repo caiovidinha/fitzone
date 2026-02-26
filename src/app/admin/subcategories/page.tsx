@@ -92,7 +92,7 @@ function SubcategoryFormModal({
             <div className="flex items-center gap-4">
               <div className="relative h-20 w-32 overflow-hidden rounded-xl bg-zinc-800">
                 {preview && !removeImage ? (
-                  <Image src={preview} alt="Preview" fill className="object-cover" sizes="128px" />
+                  <Image src={preview} alt="Preview" fill unoptimized className="object-cover" sizes="128px" onError={(e) => console.error('[Subcategories] Preview blob failed:', preview, e)} />
                 ) : (
                   <div className="flex h-full items-center justify-center text-zinc-600">
                     <svg viewBox="0 0 24 24" fill="none" className="h-8 w-8" stroke="currentColor" strokeWidth={1.5}>
@@ -269,8 +269,10 @@ export default function SubcategoriesPage() {
                     src={sub.image_url}
                     alt={sub.name}
                     fill
+                    unoptimized
                     className="object-cover opacity-70"
                     sizes="(max-width: 1024px) 50vw, 33vw"
+                    onError={(e) => console.error('[Subcategories] Image failed to load:', sub.image_url, e)}
                   />
                 ) : (
                   <div className="flex h-full items-center justify-center text-zinc-700">

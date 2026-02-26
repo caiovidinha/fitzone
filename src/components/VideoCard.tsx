@@ -1,3 +1,5 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
 import { formatDuration } from "@/lib/utils";
@@ -17,8 +19,10 @@ export function VideoCard({ video }: VideoCardProps) {
             src={video.thumbnail_url}
             alt={video.title}
             fill
+            unoptimized
             className="object-cover transition duration-500 group-hover:scale-105 group-hover:opacity-80"
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+            onError={(e) => console.error('[VideoCard] Image failed to load:', video.thumbnail_url, e)}
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center bg-linear-to-br from-zinc-800 to-zinc-900">
